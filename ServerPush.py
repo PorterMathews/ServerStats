@@ -1,7 +1,17 @@
 import shutil
 import os
+import threading
+import time
+import sys
+
 # Import the hardcoded file paths from a settings.py file
+# Ensure that settings.py exists in the same directory and contains:
+# FILEPATH_TO_STORAGE = "/path/to/your/storage/directory"
+# FILEPATH_TO_SERVER = "/path/to/your/server/file.txt"
 from settings import FILEPATH_TO_STORAGE, FILEPATH_TO_SERVER
+
+# Define the interval for repeating the file move (5 minutes = 300 seconds)
+INTERVAL_SECONDS = 300
 
 def move_file():
     """
@@ -11,6 +21,8 @@ def move_file():
     """
     source_path = FILEPATH_TO_SERVER
     destination_path = FILEPATH_TO_STORAGE
+
+    print(f"Attempting to move '{source_path}' to '{destination_path}' at {time.ctime()}...")
 
     try:
         # Check if the source file exists
@@ -35,15 +47,47 @@ def move_file():
         print(f"Error: One of the paths specified was not found.")
         return False
     except PermissionError:
-        print(f"Error: Permission denied. Check file/folder permissions.")
+        print(f"Error: Permission denied. Check file/folder permissions for '{source_path}' and '{destination_path}'.")
         return False
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
         return False
 
-# --- Example Usage ---
-if __name__ == "__main__":
-    print("Attempting to move file using hardcoded paths from settings.py...")
-    # Call the move_file function without arguments
+def schedule_move():
+    """
+    Schedules the move_file function to run after INTERVAL_SECONDS,
+    and then reschedules itself.
+    """
+    # Call the file moving function
     move_file()
-    print("\n--- Script execution finished ---")
+    # Schedule the next call
+    global timer_thread
+    timer_thread = threading.Timer(INTERVAL_SECONDS, schedule_move)
+    timer_thread.start()
+
+# --- Main execution block ---
+if __name__ == "__main__":
+    print(f"Starting file mover. It will run every {INTERVAL_SECONDS / 60} minutes.")
+    print("Press Ctrl+C to stop the script.")
+
+    # Initialize the timer_thread globally to be able to cancel it
+    timer_thread = None
+
+    try:
+        # Start the first scheduled move immediately
+        schedule_move()
+        # Keep the main thread alive so the timer thread can run
+        # This loop will run indefinitely until a KeyboardInterrupt
+        while True:
+            time.sleep(1) # Sleep for a short duration to avoid busy-waiting
+    except KeyboardInterrupt:
+        print("\nCtrl+C detected. Stopping the file mover...")
+        if timer_thread:
+            timer_thread.cancel() # Cancel the pending timer
+        print("Script stopped.")
+        sys.exit(0) # Exit gracefully
+    except Exception as e:
+        print(f"An unhandled error occurred in the main loop: {e}")
+        if timer_thread:
+            timer_thread.cancel()
+        sys.exit(1)
